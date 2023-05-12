@@ -1,6 +1,10 @@
 export interface Env {
   R2_BUCKET: R2Bucket
   DMARC_ANALYTICS: AnalyticsEngineDataset
+  username: string
+  password: string
+  EShost: string
+  ESindex: string
 }
 
 export type Header = Record<string, string>

@@ -13,3 +13,5 @@ preview_bucket_name = "dmarc-reports-open" # Set this to your preview R2 bucket 
 binding = "DMARC_ANALYTICS"
 dataset = "dmarc_reports"
 
+[vars]
+ESindex = "dmarc"

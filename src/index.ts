@@ -16,6 +16,9 @@ import {
   PolicyOverrideType,
 } from './types'
 
+const EShost = "https://simon-s-demo.es.us-central1.gcp.cloud.es.io";
+const ESindex = "dmarc";
+
 export default {
   async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     await handleEmail(message, env, ctx)
@@ -47,13 +50,30 @@ async function handleEmail(message: EmailMessage, env: Env, ctx: ExecutionContex
   }
 
   // get xml
-  const reportJSON = await getDMARCReportXML(attachment)
+  var reportJSON
+  try {
+    reportJSON = await getDMARCReportXML(attachment)
+  } catch (e) {
+    throw new Error(`Unable to extract report from archive: ${e}`);
+  }
 
   // get report
   const report = getReportRows(reportJSON)
 
   // send to analytics engine
-  await sendToAnalyticsEngine(env, report)
+  try {
+    await sendToAnalyticsEngine(env, report)
+  } catch (e) {
+    console.log(e);
+  }
+  // send to elasticsearch
+  
+  try {
+    await sendToElasticSearch(env, reportJSON)
+  } catch (e) {
+    console.log(e);
+  }
+  
 }
 
 async function getDMARCReportXML(attachment: Attachment) {
@@ -63,7 +83,7 @@ async function getDMARCReportXML(attachment: Attachment) {
 
   switch (extension) {
     case 'gz':
-      xml = pako.inflate(new TextEncoder().encode(attachment.content as string), { to: 'string' })
+      xml = pako.inflate(attachment.content, { to: 'string' })
       break
 
     case 'zip':
@@ -137,6 +157,40 @@ function getReportRows(report: any): DmarcRecordRow[] {
   }
 
   return listEvents
+}
+
+async function sendToElasticSearch(env: Env, report: any) {
+  const reportMetadata = report.feedback.report_metadata
+  const policyPublished = report.feedback.policy_published
+  const records = Array.isArray(report.feedback.record) ? report.feedback.record : [report.feedback.record]
+  const d = new Date();
+  let millis = d.getTime();
+  let timestamp = d.toISOString();
+  // format for bulk requests
+  let body = "";
+  records.forEach((record: any) => {
+    body += JSON.stringify({"index":{}})+"\n";
+    body += JSON.stringify({...record,"@timestamp":timestamp,"reportMetadata":reportMetadata,"policyPublished":policyPublished})+"\n";
+  });
+  console.log(body);
+  let url = `${env.EShost}/${env.ESindex}/_bulk/`;
+  let headers = {
+    "authorization": `Basic ${btoa(env.username + ":" + env.password)}`,
+    "content-type": "application/json;charset=UTF-8"
+  };
+  let cf = {
+    cacheTtl: -1,
+    cacheKey: `${url}-${millis}`,
+  }
+  let init = {
+    body: body,
+    method: "POST",
+    headers,
+    cf
+  };
+  const res = await fetch(url, init);
+  let json = await res.json();
+  return json;
 }
 
 async function sendToAnalyticsEngine(env: Env, reportRows: DmarcRecordRow[]) {
