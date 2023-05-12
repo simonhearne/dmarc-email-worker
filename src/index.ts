@@ -16,9 +16,6 @@ import {
   PolicyOverrideType,
 } from './types'
 
-const EShost = "https://simon-s-demo.es.us-central1.gcp.cloud.es.io";
-const ESindex = "dmarc";
-
 export default {
   async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
     await handleEmail(message, env, ctx)
@@ -61,19 +58,22 @@ async function handleEmail(message: EmailMessage, env: Env, ctx: ExecutionContex
   const report = getReportRows(reportJSON)
 
   // send to analytics engine
-  try {
-    await sendToAnalyticsEngine(env, report)
-  } catch (e) {
-    console.log(e);
+  if (env.DMARC_ANALYTICS) {
+    try {
+      await sendToAnalyticsEngine(env, report)
+    } catch (e) {
+      console.log(e);
+    }
   }
   // send to elasticsearch
   
-  try {
-    await sendToElasticSearch(env, reportJSON)
-  } catch (e) {
-    console.log(e);
+  if (env.ESindex) {
+    try {
+      await sendToElasticSearch(env, reportJSON)
+    } catch (e) {
+      console.log(e);
+    }
   }
-  
 }
 
 async function getDMARCReportXML(attachment: Attachment) {
@@ -83,6 +83,7 @@ async function getDMARCReportXML(attachment: Attachment) {
 
   switch (extension) {
     case 'gz':
+      // eslint-disable-next-line
       xml = pako.inflate(attachment.content, { to: 'string' })
       break
 
